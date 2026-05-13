@@ -72,3 +72,4 @@ free_stack:
     add rsp, rbx
     ret
 
+:

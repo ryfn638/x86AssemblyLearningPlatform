@@ -7,15 +7,36 @@
 ; consts_init
 ; Initialises all the constant values for the sim, such as batch size and learning rate.
 ; ======================
-global consts_init
-consts_init:
-    section .data
-        batchSize dq 32
-        learningRate dd 0.0001
+section .data
+    batchSize dq 32
+    learningRate dd 0.0001
 
-    ret
 
-;
+; ==========================
+; RNG State Constants
+; ==========================
+
+section .section .data
+    maxInt dd 0x7FFFFFFF
+    half dd 0.5
+    
+section .bss
+    rngState resd 1 ; 32 bit current value
+
+; ========================
+; Node and Weight Size Pointer memory addresses
+; ======================== 
+section .bss
+    nodeSize resq 1 ; 8 Bytes for 64 bit address
+    weightSize resq 1; Weights Address
+
+; =======================
+; Network Shape Pointer memory address
+; =======================
+section .bss
+    networkShape resq 1 ; Network Dimensions
+    networkOffset resq 1 ; Network Offsets for easy calculation
+    networkLayers resq 1 ; Number of layers in the network
 
 ; Initialising the network structure
 ; Input Size in this case will be a constant 30x30 pixel grid
@@ -71,32 +92,29 @@ network_init:
     mov r10, 34    
     call allocate_heap
     ; Heap is now allocated we dont need rcx ore
-
-    section .bss
-        nodeSize resq 1 ; 8 Bytes for 64 bit address
-        weightSize resq 1; Weights Address
-
     mov [nodeSize], rax ; ArenaSize is now our pointer
 
+    mov [networkLayers] resq rcx ; Assign the total number of layers in the network
+    ; =============================
+    ; Network shape heap allocation
+    ; =============================
 
-    ; The heap here is essentially out array
     mov rsi, rcx
     mul rsi, 4 ; rcx is the number of layers, * 4 makes a 4 byte array for each layer
     call allocate_heap
-    section .bss
-        networkShape resq 1
-
     mov [networkShape] resq rax ; networkShape now contains an empty array of size 4 (4 bytes each)
+    mov [networkOffset] resq rax ; Network Dimensions are the same premise, empty array of size 4 with 4 bytes each, sweet as. and its dynamic to different models, umazing
 
-    mov rcx, rsi ; dont need rax, anymore find to make it hold rcx for now
-    add rcx, networkShape
-    
+    ; Allocating the contents of networkShape
+
+
+    mul rcx, 4 ; rcx is 12 at this point here
 
     mov rbx, 0
     assignLoop: ; Assigning the Network structure loop
         pop rsi
-        mov [rcx], rsi
-
+        mov [networkShape + rcx], rsi
+        
         mov rbp, rbx ; rbp is the previous dimension
         mov rbx, rsi ; rbx is the current dimension
         
@@ -104,7 +122,8 @@ network_init:
         mul r12, rbx
 
         add r13, r12 ; Increment the results on
-        
+        mov rcl
+        mov [networkOffset + rcx], r13
         
         sub rcx, 4
         jnz assignLoop
@@ -124,31 +143,20 @@ network_init:
 ; ============================================
 
 generate_random_nums:
-
-    section .section .data
-        maxInt dd 0x7FFFFFFF
-        half dd 0.5
-        
-    section .bss
-        rngState resd 1 ; 32 bit current value
-
-
     mov eax, 1664525
-    mov ecx 1013904223
+    mov ecx, 1013904223
     
     mul eax, rngState
     add eax, ecx
 
     inc rngState ; Update the generation seed
 
-    and eax 0xFFFFFFFF
+    and eax, 0xFFFFFFFF
     cvtsi2ss xmm0, eax
     divss xmm0, [maxInt]
     subss xmm0, [half]
     ret
 ;
-
-
 ; Next we need to define the actual method of filling up the weightSpace
 ; TODO: Make the Memory Arena Before writing our actual values
 write_default_weights:
@@ -156,5 +164,42 @@ write_default_weights:
     ; Write the default values for the weights on the network using the generate_random_nums bit
     ; xmm registers can hold up to 4 floating points allegedly
     ; so maybe what we can do is generate 4 numbers at once, but we'll see later down the line.
+        
+    mov rcx, 0 ; Initialise rcx with a zero value
+    layerIndex equ rcx ; Alias for rcx for readability
 
+    mov rdx, 0
+    neuronIndex equ rdx ; Neuron index alias
+ 
+    mov r8, 0
+    weightIndex equ r8
+
+
+    ; We're going to have to do our very first assembly nested loop how exciting
+    layerLoop:
+        ; Looping over all the hidden layers, might abstract a method to loop over all the weights that belong to a neuron
+        mov eax, layerIndex
+        inc eax
+        imul eax, 4
+        mov ebx, [networkShape + eax]
+        neuronLoop:
+            
+            ; Abstract a method to loop over all of the weights inside of an array
+            
+            call weight_loop
+
+
+            cmp neuronIndex, [networkShape + layerIndex * 4] ; Compare it with the amount of neurons on our hidden layer
+            jl neuronLoop
+        
+        cmp layerIndex, [networkLayers]
+        jl layerLoop ; Loop over the layers until all have been iterated through
     ret
+;
+
+weight_loop:
+    
+    ; Make adjustments here
+
+   cmp weightIndex, ebx
+   jl weight_loop
