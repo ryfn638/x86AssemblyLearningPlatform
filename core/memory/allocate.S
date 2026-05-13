@@ -7,11 +7,12 @@ global allocate_static
 ; =======================
 ; allocate_static()
 ; Allocates 1024 Bytes for constants during the simulation
+; rbx The number of bytes to allocate, This is used for network params
 ; =======================
 
 allocate_static:
     section .bss
-        staticPool resb 1024 ; Reservevs 1024 Bytes for constants.
+        staticPool resb rbx ; Reservevs 1024 Bytes for constants.
     ret
 
 
@@ -46,15 +47,28 @@ free_heap:
     mov rax, 11
     syscall
     ret
+;
 
 global allocate_stack
 
 ; ======================
 ; allocate_stack()
 ; Allocates specific memory to the stack
-;
+; rbx number of bytes memory to allocate on the stack
 ; ======================
 allocate_stack:
-    sub rsp, 32
-
+    sub rsp, rbx
     ret
+
+;
+
+global free_stack
+; ======================
+; free_stack
+; Frees Local memory from the stack
+; rbx, The numberof bytes that are being deallocated from the stack
+; ======================
+free_stack:
+    add rsp, rbx
+    ret
+
