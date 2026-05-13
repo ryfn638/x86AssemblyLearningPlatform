@@ -36,14 +36,16 @@ network_init:
     ; NETWORK STRUCTURE, FEEL FREE TO MODIFY
     ; ===================
 
-    mov rcx, 0 
+    mov rbx, 0
+    mov rcx, 0
+    
+    
     ; Input Layer - 3600 Bytes
     mov rax, 900
     push rax
     mul rax, 4
     mov rsi, rax
     inc rcx
-
     ; Hidden Layer 1 - 512 Bytes
     mov rax, 128
     push rax
@@ -71,15 +73,16 @@ network_init:
     ; Heap is now allocated we dont need rcx ore
 
     section .bss
-        arenaSize resq 1 ; 8 Bytes for 64 bit address
+        nodeSize resq 1 ; 8 Bytes for 64 bit address
+        weightSize resq 1; Weights Address
 
-    mov [arenaSize], rax ; ArenaSize is now our pointer
+    mov [nodeSize], rax ; ArenaSize is now our pointer
+
 
     ; The heap here is essentially out array
     mov rsi, rcx
     mul rsi, 4 ; rcx is the number of layers, * 4 makes a 4 byte array for each layer
     call allocate_heap
-
     section .bss
         networkShape resq 1
 
@@ -87,25 +90,71 @@ network_init:
 
     mov rcx, rsi ; dont need rax, anymore find to make it hold rcx for now
     add rcx, networkShape
-
-    pop rsi ; Move the value at the top of the stack onto rsi, which is the output layer dimension
-    mov [rcx], rsi 
-
-    sub rcx, 4
-    pop rsi
-    mov [rcx], rsi
     
-    sub rcx, 4
-    pop rsi
-    mov [rcx], rsi
 
-    sub rcx, 4
-    pop rsi
-
-    assignLoop:
+    mov rbx, 0
+    assignLoop: ; Assigning the Network structure loop
         pop rsi
         mov [rcx], rsi
+
+        mov rbp, rbx ; rbp is the previous dimension
+        mov rbx, rsi ; rbx is the current dimension
+        
+        mov r12, rbp ; move rbp to r12 and then multiply the two
+        mul r12, rbx
+
+        add r13, r12 ; Increment the results on
+        
         
         sub rcx, 4
         jnz assignLoop
+    
+    ; r13 is the output for the number of total weights
+    
+    ; Freely allocate the weight now yippee
+    mov [weightSize], r13;
 
+    ret
+;
+
+; ============================================
+; generate_random_nums()
+; Generates Random numbers to assign to the weights
+; xmm0 is the output register
+; ============================================
+
+generate_random_nums:
+
+    section .section .data
+        maxInt dd 0x7FFFFFFF
+        half dd 0.5
+        
+    section .bss
+        rngState resd 1 ; 32 bit current value
+
+
+    mov eax, 1664525
+    mov ecx 1013904223
+    
+    mul eax, rngState
+    add eax, ecx
+
+    inc rngState ; Update the generation seed
+
+    and eax 0xFFFFFFFF
+    cvtsi2ss xmm0, eax
+    divss xmm0, [maxInt]
+    subss xmm0, [half]
+    ret
+;
+
+
+; Next we need to define the actual method of filling up the weightSpace
+; TODO: Make the Memory Arena Before writing our actual values
+write_default_weights:
+    ; TODO:
+    ; Write the default values for the weights on the network using the generate_random_nums bit
+    ; xmm registers can hold up to 4 floating points allegedly
+    ; so maybe what we can do is generate 4 numbers at once, but we'll see later down the line.
+
+    ret
