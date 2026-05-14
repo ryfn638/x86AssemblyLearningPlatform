@@ -1,3 +1,6 @@
+section .bss
+    networkPtr resq 1
+    networkSize resq 1
 
 ; Arena Allocator here
 
@@ -26,14 +29,14 @@ create_arena:
     ; Returns come from rax which is the virtual address
     
     mov rsi, nodeSize
-    mul rsi, weightSize
+    add rsi, weightSize
     mov rdx, 3 ; Read and write permissions
     mov r10, 34 ; Private
     call allocate_heap
 
     ; rax is now the address of our memory map
-    mov rbp, rsi ; rbp is our storage for our arena
-    mov r12, rax ; r12 is our pointer to the arena memory
+    mov [networkSize], rsi ; rbp is our storage for our arena
+    mov [networkPtr], rax ; r12 is our pointer to the arena memory
     ret
 
 free_arena:

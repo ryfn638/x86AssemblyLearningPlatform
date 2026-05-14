@@ -185,7 +185,7 @@ write_default_weights:
         neuronLoop:
             
             ; Abstract a method to loop over all of the weights inside of an array
-            
+            mov weightIndex, 0
             call weight_loop
 
 
@@ -199,7 +199,17 @@ write_default_weights:
 
 weight_loop:
     
-    ; Make adjustments here
+    ; Adjust individual weights
+   
+    inc weightIndex
 
-   cmp weightIndex, ebx
-   jl weight_loop
+    call generate_random_nums
+    ;xmm0 now contains a pseudo random num
+    
+    mov r9, [networkOffset + layerIndex]
+    mov [networkPtr + r9 + 4*weightIndex], xmm0 ; Move the random weight into position    
+
+    ; compare with if the neuron has finished iterating over weights
+    
+    cmp weightIndex, ebx
+    jl weight_loop
