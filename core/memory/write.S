@@ -16,7 +16,7 @@ section .data
 ; RNG State Constants
 ; ==========================
 
-section .section .data
+section .data
     maxInt dd 0x7FFFFFFF
     half dd 0.5
     
@@ -91,8 +91,11 @@ network_init:
     mov rdx, 3
     mov r10, 34    
     call allocate_heap
+
+    mov r12, rax
+    shl r12 ; 
     ; Heap is now allocated we dont need rcx ore
-    mov [nodeSize], rax ; ArenaSize is now our pointer
+    mov [nodeSize], r12 ; ArenaSize is now our pointer
 
     mov [networkLayers] resq rcx ; Assign the total number of layers in the network
     ; =============================
@@ -187,7 +190,8 @@ write_default_weights:
             ; Abstract a method to loop over all of the weights inside of an array
             mov weightIndex, 0
             call weight_loop
-
+            
+            inc neuronIndex
 
             cmp neuronIndex, [networkShape + layerIndex * 4] ; Compare it with the amount of neurons on our hidden layer
             jl neuronLoop
@@ -206,9 +210,10 @@ weight_loop:
     call generate_random_nums
     ;xmm0 now contains a pseudo random num
     
-    mov r9, [networkOffset + layerIndex]
-    mov [networkPtr + r9 + 4*weightIndex], xmm0 ; Move the random weight into position    
-
+    mov r9, [networkOffset + layerIndex] ; The offset for the different neurons
+    mov [networkPtr + r9 + 4*weightIndex + 8], xmm0 ; Move the random weight into position    
+ 
+    mov [networkPtr + r9 + 4], 0 ; networkPtr + r9 is the neuron, next 4 bytes are the bias
     ; compare with if the neuron has finished iterating over weights
     
     cmp weightIndex, ebx
