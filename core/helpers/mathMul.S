@@ -20,6 +20,8 @@ forward_pass:
     call neuron_forward_pass
 ;
 
+section .data
+    zero dd 0.0
 neuron_forward_pass:
     ; for each neuron in the next layer, we make an allocation to the stack
     mov ebx, 0
@@ -79,9 +81,10 @@ weight_loop:
    
     inc weightIndex
 
-    mov xmm0, [networkPtr + r9 + 4*weightIndex + 4] ; Put the current weight inside of xmm0
+    mov xmm0, [networkPtr + r9 + 4*weightIndex + 8] ; Put the current weight inside of xmm0
     mul xmm0, [networkPtr + edx];
-    
+    maxss xmm0, [zero] ; ReLU activation function (just easier and better than sigmoid for weights
+
     add dword [rsp + neuronIndex*4], xmm0 ; Adjust the stack accumulation
 
     cmp weightIndex, ebx
