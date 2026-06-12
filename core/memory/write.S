@@ -2,219 +2,181 @@
 ; Memory Writing Programs
 ; ======================
 
-
-; ======================
-; consts_init
-; Initialises all the constant values for the sim, such as batch size and learning rate.
-; ======================
 section .data
-    batchSize dq 32
-    learningRate dd 0.0001
-
-
-; ==========================
-; RNG State Constants
-; ==========================
+    batchSize   dq 32
+    ; learningRate is defined in backprop.S
 
 section .data
     maxInt dd 0x7FFFFFFF
-    half dd 0.5
-    
-section .bss
-    rngState resd 1 ; 32 bit current value
+    half   dd 0.5
 
-; ========================
-; Node and Weight Size Pointer memory addresses
-; ======================== 
 section .bss
-    nodeSize resq 1 ; 8 Bytes for 64 bit address
-    weightSize resq 1; Weights Address
+    rngState resd 1
+
+section .bss
+    nodeSize   resq 1
+    weightSize resq 1
+
+section .bss
+    networkShape  resq 1
+    networkOffset resq 1
+    networkLayers resq 1
 
 ; =======================
-; Network Shape Pointer memory address
-; =======================
-section .bss
-    networkShape resq 1 ; Network Dimensions
-    networkOffset resq 1 ; Network Offsets for easy calculation
-    networkLayers resq 1 ; Number of layers in the network
-
-; Initialising the network structure
-; Input Size in this case will be a constant 30x30 pixel grid
+; networkInit()
+; Initialises the network structure and allocates heap memory for nodes,
+; weights, shape, and offset arrays.
 ;
-; Structure we're going to go with, for basic 30x30 number recognition
-; 900 nodes - input
-; 128 nodes - hidden
-; 64 nodes - hidden 2
-; 10 nodes - output
-; rax is the amount of bytes needed 
-; N
-network_init:
-
-    ; Network Memory Allocation
-
-
-    ; ===================
-    ; NETWORK STRUCTURE, FEEL FREE TO MODIFY
-    ; ===================
-
+; Network topology (30x30 input → digit classifier):
+;   900 nodes  - input
+;   128 nodes  - hidden 1
+;    64 nodes  - hidden 2
+;    10 nodes  - output
+;
+; rax: total byte count needed for nodes
+; =======================
+networkInit:
     mov rbx, 0
     mov rcx, 0
-    
-    
-    ; Input Layer - 3600 Bytes
+
+    ; Input Layer - 3600 bytes
     mov rax, 900
     push rax
-    mul rax, 4
+    imul rax, 4
     mov rsi, rax
     inc rcx
-    ; Hidden Layer 1 - 512 Bytes
+
+    ; Hidden Layer 1 - 512 bytes
     mov rax, 128
     push rax
-    mul rax, 4
+    imul rax, 4
     add rsi, rax
     inc rcx
 
-    ; Hidden Layer two - 256
+    ; Hidden Layer 2 - 256 bytes
     mov rax, 64
-    push rax ; Caching the network shape in the stack
-    mul rax, 4
+    push rax
+    imul rax, 4
     add rsi, rax
     inc rcx
 
-    ; Output Layer - 40 Bytes
+    ; Output Layer - 40 bytes
     mov rax, 10
     push rax
-    mul rax, 4
+    imul rax, 4
     add rsi, rax
+    inc rcx
 
-    ; Configuring Heap allocation
+    ; Allocate node storage
     mov rdx, 3
-    mov r10, 34    
-    call allocate_heap
+    mov r10, 34
+    call allocateHeap
 
     mov r12, rax
-    shl r12 ; 
-    ; Heap is now allocated we dont need rcx ore
-    mov [nodeSize], r12 ; ArenaSize is now our pointer
+    mov [nodeSize], r12
+    mov [networkLayers], rcx
 
-    mov [networkLayers] resq rcx ; Assign the total number of layers in the network
-    ; =============================
-    ; Network shape heap allocation
-    ; =============================
-
+    ; Allocate networkShape array (one dword per layer)
     mov rsi, rcx
-    mul rsi, 4 ; rcx is the number of layers, * 4 makes a 4 byte array for each layer
-    call allocate_heap
-    mov [networkShape] resq rax ; networkShape now contains an empty array of size 4 (4 bytes each)
-    mov [networkOffset] resq rax ; Network Dimensions are the same premise, empty array of size 4 with 4 bytes each, sweet as. and its dynamic to different models, umazing
+    imul rsi, 4
+    call allocateHeap
+    mov [networkShape], rax
 
-    ; Allocating the contents of networkShape
+    ; Allocate networkOffset array (separate allocation, same size)
+    mov rsi, rcx
+    imul rsi, 4
+    call allocateHeap
+    mov [networkOffset], rax
 
+    ; Populate networkShape and networkOffset by popping layer sizes off the stack.
+    ; rcx holds the layer count; convert to a byte offset for the last element.
+    imul rcx, 4     ; rcx = byte offset of last entry
 
-    mul rcx, 4 ; rcx is 12 at this point here
-
-    mov rbx, 0
-    assignLoop: ; Assigning the Network structure loop
-        pop rsi
+    mov rbx, 0      ; rbx tracks the previous layer size for weight-count products
+    assignLoop:
+        pop rsi                         ; layer size (popped in reverse: 10, 64, 128, 900)
         mov [networkShape + rcx], rsi
-        
-        mov rbp, rbx ; rbp is the previous dimension
-        mov rbx, rsi ; rbx is the current dimension
-        
-        mov r12, rbp ; move rbp to r12 and then multiply the two
-        mul r12, rbx
 
-        add r13, r12 ; Increment the results on
-        mov rcl
+        mov rbp, rbx                    ; rbp = previous layer size
+        mov rbx, rsi                    ; rbx = current layer size
+        mov r12, rbp
+        imul r12, rbx                   ; r12 = prev * curr connection count
+
+        add r13, r12                    ; accumulate total weight count
         mov [networkOffset + rcx], r13
-        
+
         sub rcx, 4
         jnz assignLoop
-    
-    ; r13 is the output for the number of total weights
-    
-    ; Freely allocate the weight now yippee
-    mov [weightSize], r13;
 
+    mov [weightSize], r13
     ret
-;
 
 ; ============================================
-; generate_random_nums()
-; Generates Random numbers to assign to the weights
-; xmm0 is the output register
+; generateRandomNums()
+; LCG random float in [-0.5, 0.5] for weight initialisation
+; returns xmm0
 ; ============================================
-
-generate_random_nums:
+generateRandomNums:
     mov eax, 1664525
+    imul eax, [rngState]
     mov ecx, 1013904223
-    
-    mul eax, rngState
     add eax, ecx
 
-    inc rngState ; Update the generation seed
+    inc dword [rngState]
 
-    and eax, 0xFFFFFFFF
+    and eax, 0x7FFFFFFF
     cvtsi2ss xmm0, eax
     divss xmm0, [maxInt]
     subss xmm0, [half]
     ret
-;
-; Next we need to define the actual method of filling up the weightSpace
-; TODO: Make the Memory Arena Before writing our actual values
-write_default_weights:
-    ; TODO:
-    ; Write the default values for the weights on the network using the generate_random_nums bit
-    ; xmm registers can hold up to 4 floating points allegedly
-    ; so maybe what we can do is generate 4 numbers at once, but we'll see later down the line.
-        
-    mov rcx, 0 ; Initialise rcx with a zero value
-    layerIndex equ rcx ; Alias for rcx for readability
+
+; ============================================
+; writeDefaultWeights()
+; Fills all network weights with values from generateRandomNums
+; ============================================
+writeDefaultWeights:
+    mov rcx, 0
+    layerIndex equ rcx
 
     mov rdx, 0
-    neuronIndex equ rdx ; Neuron index alias
- 
+    neuronIndex equ rdx
+
     mov r8, 0
     weightIndex equ r8
 
-
-    ; We're going to have to do our very first assembly nested loop how exciting
-    layerLoop:
-        ; Looping over all the hidden layers, might abstract a method to loop over all the weights that belong to a neuron
-        mov eax, layerIndex
+    writeLayerLoop:
+        mov eax, ecx
         inc eax
         imul eax, 4
-        mov ebx, [networkShape + eax]
-        neuronLoop:
-            
-            ; Abstract a method to loop over all of the weights inside of an array
+        mov ebx, [networkShape + eax]   ; neuron count of the next layer
+
+        mov neuronIndex, 0
+        writeNeuronLoop:
             mov weightIndex, 0
-            call weight_loop
-            
+            call writeWeightLoop
+
             inc neuronIndex
+            cmp neuronIndex, [networkShape + layerIndex * 4]
+            jl writeNeuronLoop
 
-            cmp neuronIndex, [networkShape + layerIndex * 4] ; Compare it with the amount of neurons on our hidden layer
-            jl neuronLoop
-        
+        inc layerIndex
         cmp layerIndex, [networkLayers]
-        jl layerLoop ; Loop over the layers until all have been iterated through
+        jl writeLayerLoop
     ret
-;
 
-weight_loop:
-    
-    ; Adjust individual weights
-   
+; ============================================
+; writeWeightLoop()
+; Writes one neuron's weights into the arena
+; ebx: number of weights (incoming connections)
+; ============================================
+writeWeightLoop:
+    call generateRandomNums             ; xmm0 = random weight
+
+    mov r9, [networkOffset + layerIndex * 4]
+    movss [networkPtr + r9 + weightIndex*4 + 8], xmm0
+    mov dword [networkPtr + r9 + 4], 0  ; zero bias
+
     inc weightIndex
-
-    call generate_random_nums
-    ;xmm0 now contains a pseudo random num
-    
-    mov r9, [networkOffset + layerIndex] ; The offset for the different neurons
-    mov [networkPtr + r9 + 4*weightIndex + 8], xmm0 ; Move the random weight into position    
- 
-    mov [networkPtr + r9 + 4], 0 ; networkPtr + r9 is the neuron, next 4 bytes are the bias
-    ; compare with if the neuron has finished iterating over weights
-    
     cmp weightIndex, ebx
-    jl weight_loop
+    jl writeWeightLoop
+    ret

@@ -1,75 +1,71 @@
 ; ==============================
-; Basic Memory Allcator Methods
+; Basic Memory Allocator Methods
 ; ==============================
 
-global allocate_static
+section .bss
+    staticPool resb 1024
+
+global allocateStatic
 
 ; =======================
-; allocate_static()
-; Allocates 1024 Bytes for constants during the simulation
-; rbx The number of bytes to allocate, This is used for network params
+; allocateStatic()
+; Returns the address of the 1024-byte static pool for network constants
+; returns rax: address of staticPool
 ; =======================
-
-allocate_static:
-    section .bss
-        staticPool resb rbx ; Reservevs 1024 Bytes for constants.
+allocateStatic:
+    lea rax, [staticPool]
     ret
 
 
-global allocate_heap
+global allocateHeap
 
 ; ======================
-; allocate_heap()
-; allocates memory to the heap, this is for dynamic memory in our arena
-; rax: 9 - Linux mmap (const)
-; rdi startingAddress
-; rsi Length
-; rdx protection flags
-; r10 mapping flags
-; r8 file descriptor
-; r9 Offset (usually 0)
-; Returns come from rax which is the virtual address
-allocate_heap:
-    mov rax 9 ; Assign Linux mmap
+; allocateHeap()
+; Allocates memory via mmap syscall
+; rdi: starting address (0 for kernel choice)
+; rsi: length in bytes
+; rdx: protection flags
+; r10: mapping flags
+; r8:  file descriptor (-1 for anonymous)
+; r9:  offset (0 for anonymous)
+; returns rax: virtual address of mapped region
+; ======================
+allocateHeap:
+    mov rax, 9
     syscall
     ret
 
-global free_heap
-
+global freeHeap
 
 ; ======================
-; free_heap()
-; rdi Address to unmap
-; rsi length in bytes to free
-; deallocates selected memory to the heap.
+; freeHeap()
+; Deallocates a mapped memory region via munmap
+; rdi: address to unmap
+; rsi: length in bytes
 ; ======================
-free_heap:
+freeHeap:
     mov rax, 11
     syscall
     ret
-;
 
-global allocate_stack
+global allocateStack
 
 ; ======================
-; allocate_stack()
-; Allocates specific memory to the stack
-; rbx number of bytes memory to allocate on the stack
+; allocateStack()
+; Reserves space on the stack
+; rbx: number of bytes to allocate
 ; ======================
-allocate_stack:
+allocateStack:
     sub rsp, rbx
     ret
 
-;
+global freeStack
 
-global free_stack
 ; ======================
-; free_stack
-; Frees Local memory from the stack
-; rbx, The numberof bytes that are being deallocated from the stack
+; freeStack()
+; Releases stack space previously reserved by allocateStack
+; rbx: number of bytes to free
 ; ======================
-free_stack:
+freeStack:
     add rsp, rbx
     ret
-
-:
