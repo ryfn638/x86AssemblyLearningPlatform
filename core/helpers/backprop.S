@@ -20,12 +20,55 @@ create_backprop_arena:
     ret
 
 
+
+
 ; ==================================
 ; calculate_all_gradients()
 ; ==================================
+; updates all weights with updated vaulues based on back propagation
 calculate_all_gradients:
-    ; calculate all of the weight gradients and update them in the arena
-    ; factor in the learning rate
+
+    assignLayerIndex equ rax 
+    mov rax, [networkLayers]
+
+    assignNeuronIndex equ rdx 
+    mov rdx, [networkShape + layerIndex * 4]
+
+    assignweightIndex equ r11
+    mov r11, [networkShape + r9 + 4]
+
+    call assignLayerLoop
+
+    assignLayerLoop:
+        ; Looping over all the hidden layers, might abstract a method to loop over all the weights that belong to a neuron
+        assignNeuronLoop:
+            mov weightIndex, 0
+            call assignWeightLoop
+            
+            mov rcx, [networkShape + layerIndex * 4]
+            cmp neuronIndex, [networkShape + layerIndex * 4] ; Compare it with the amount of neurons on our hidden layer
+            dec neuronIndex
+            jl assignNeuronLoop
+
+        dec assignLayerIndex
+        cmp assignLayerIndex, 0
+        jl assignLayerLoop ; Loop over the layers until all have been iterated through
+    ret
+
+; params
+; rcx is the layer being worked on
+; neuronIndex, neuron Index in the list
+; weightIndex, weight index
+assignWeightLoop:
+    ; Adjust individual weights
+    call sum_previous ; initialises the previous weights loop, xmm2 contains the culmulative sum
+    mov [networkPtr + 8*neuronIndex + rcx], xmm2
+
+    cmp weightIndex, 0
+    dec weightIndex
+
+    jl weight_loop
+
 ; ==================================
 ; calulate_layer_gradient()
 ; Calculates the gradients for a singular layer;
@@ -119,14 +162,16 @@ find_training:
 ; sum_previous()
 ; Sums all of the previously calculated gradients and returns the result into xmm0
 ; params
+; rax : layerIndex, the layer of the weight
+; rdx : neuronIndex, the neuron the weight is connected to
+; r11 : weightIndex, weight index of the neuron
 ; returns the result into xmm0 for new updates
 ; ==================================
 sum_previous:
-    mov rax, 0 ; Initialise rcx with a zero value
     layerIndex equ rax 
-    mov rdx, 0
+    inc layerindex ; neurons are connected starting at next layer.
+
     neuronIndex equ rdx 
-    mov r11, 0
     weightIndex equ r11
     
     movss xmm2, 0
@@ -151,21 +196,19 @@ sum_previous:
 ;
 
 weight_loop:
-    
-    ; Adjust individual weights
    
-    inc weightIndex
-    mov rax, layerIndex
-    mov rdx, neuronIndex
+    ; Adjust individual weights
     call locate_result ; xmm0 now contains the param value
 
-
     mov r9, [networkOffset + layerIndex*4] ; first neuron of the layer
-    
-    movss xmm1, [networkPtr ]
-    mulss xmm0, 
-    mov [networkPtr + r9 + 4], 0 ; networkPtr + r9 is the neuron, next 4 bytes are the bias
-    ; compare with if the neuron has finished iterating over weights
-    
-    cmp weightIndex, ebx
+
+    movss xmm1, [networkPtr + r9 + neuronIndex*4 + weightIndex*4]
+    mulss xmm0, xmm1
+    addss culmSum, xmm0 ; xmm0 does weight * param 
+
+    cmp weightIndex, [networkShape + r9 + 4]
+    inc weightIndex
+
     jl weight_loop
+
+    ret
