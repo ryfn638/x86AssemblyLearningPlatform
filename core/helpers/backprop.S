@@ -8,8 +8,8 @@ section .data
 section .bss
     backPropPtr     resq 1
     backPropStorage resq 1
-    trainingData    resq 1
-
+    trainingDataPtr    resq 1
+        
 ; ==================================
 ; createBackpropArena()
 ; Allocates a gradient storage arena (biases + weights)
@@ -88,6 +88,9 @@ calculateLayerGradient:
 ; ==================================
 ; costDerivative()
 ; Computes 2 * (predicted - actual) into xmm0
+; params
+; rax: layer index
+; rdx: neuron Index
 ; ==================================
 costDerivative:
     call locateResult       ; xmm0 = predicted value
@@ -147,12 +150,35 @@ locateResult:
 ; ==================================
 ; findTraining()
 ; Loads a training label value
-; rax: pointer to training data array
-; rcx: index into that array
+; rdx: index into that array
 ; returns xmm1
 ; ==================================
 findTraining:
-    movss xmm1, [rax + rcx*4]
+    movss xmm1, [trainingDataPtr + rdx*4]
+    ret
+
+;=================================
+; seedOutputGradient()
+; Does the first output derivative layer
+; rax: layerIndex
+; rdx: neuron index
+;=================================
+seedOutputGradient:
+    mov rdx, 0;
+    rdx equ trainingNeuronIdx
+    mov rax, [networkLayers] - 1
+    rax equ trainingDataLayer
+    mov r9, [networkOffset + trainingDataLayer*4]
+    call outputNeuronLoop
+
+    outputNeuronLoop:
+        call cost_derivative ; xmm0
+	movss xmm0, xmm0
+	call stashResult
+	inc trainingNeuornIdx
+	cmp trainingNeuronIdx, [networkShape + trainingDataLayer * 4]  
+	jl outputNeuronLoop
+
     ret
 
 ; ==================================
