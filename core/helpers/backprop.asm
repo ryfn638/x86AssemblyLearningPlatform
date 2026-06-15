@@ -230,4 +230,14 @@ backpropWeightLoop:
     inc weightIndex
     cmp weightIndex, [networkShape + r9 + 4]
     jl backpropWeightLoop
+
+    ; modifying the weight
+    mov r10, [networkPtr]
+    mov rax, neuronIndex
+    imul rax, 4
+    add rax, r9
+    movss [r10 + rax + weightIndex*4], xmm2
+
     ret
+
+
