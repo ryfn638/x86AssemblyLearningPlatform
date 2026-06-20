@@ -1,25 +1,25 @@
+global textBuffer
+global newLineBool
+
 section .bss
-  buffer resb 256 ; Text Buffer
-  tempLength resb 16 ; Temporary buffer for storing values inside of rsi, can store a 64 bit integer
-  tempStr resb 16 ; Temporary buffer for storing value inside of rdx, can store 64 bits
-  eaxTemp resb 4 ; Store temporary small numbers inside of e-dx registers inside here for now
-  ebxTemp resb 4 ;
-  ecxTemp resb 4 ;
-  edxTemp resb 4 ;
-  newLineBool resb 1 ; Flag for if the string has a \n or not
+  raxTemp resb 8 ; Store temporary small numbers inside of e-dx registers inside here for now
+  rdiTemp resb 8 ;
+  rdxTemp resb 8 ;
+  newLine resb 8 ; Store new line character to append to the end
+  skipNewLine resb 1 ; Flag for if the string has a \n or now
+
+section .text
+
 ; ==================
 ; storeString()
 ; stores a string in memory and returns the memory address into rsi
 ; This is for data safety, and keeping relevant information while printing
 ; ==================
 storeStringAddr:
-  mov [tempStr], rsi ; Safekeep rsi for a moment
-  mov [tempLength], rdx
-  mov [eaxTemp], eax
-  mov [ebxTemp], ebx
-  mov [ecxTemp], ecx
-  mov [edxTemp], edx
-  lea rsi, [buffer] ; textBuffer address
+  mov [abs raxTemp], rax
+  mov [abs rdiTemp], rdi
+  mov [abs rdxTemp], rdx
+  ret
 ;
 
 ; ==================
@@ -28,21 +28,11 @@ storeStringAddr:
 ; This is for data safety, and keeping relevant information while printing
 ; ==================
 retrieveStoredData:
-  mov rsi ,[tempStr]
-  mov rdx ,[tempLength]
-  mov eax ,[eaxTemp]
-  mov ebx ,[ebxTemp]
-  mov ecx ,[ecxTemp]
-  mov edx ,[edxTemp]
+  mov rax, [abs raxTemp]
+  mov rdi ,[abs rdiTemp]
+  mov rdx ,[abs rdxTemp]
+  ret
 ;
-
-; ==================
-; maxLengthReached()
-; Loads the error code into the table and restarts loop to print error
-; ==================
-maxLengthReached:
-  mov rsi, [error_table + 0] ; error code 0 (MAX STRING LENGTH)
-  call exitPrintLoop
 
 ; ==================
 ; printChar()
@@ -51,11 +41,11 @@ maxLengthReached:
 ; rdx, the length of the string
 ; =================
 printChar:
-    mov eax, 4      ; Syscall number 4 = sys_write
-    mov ebx, 1      ; File descriptor 1 = stdout
-    mov ecx, rsi    ; Pointer to the string in memory
-    mov edx, rdx    ; Number of bytes to print
-    int 0x80        ; Call the Linux kernel
+  mov rax, 1      ; Syscall number, rax = 1 to print
+  mov rdi, 1      ; File descriptor 1 = stdout
+  syscall         ; Initiate the print
+
+  ret
 ;
 
 ;===================
@@ -64,26 +54,29 @@ printChar:
 ; prints an entire string into stdout
 ; ==================
 global printf
+
 printf:
   call storeStringAddr
 
   exitPrintLoop:
   mov rdx, 0
 
-  .strlen_loop:   
+  strlen_loop:   
     cmp byte [rsi + rdx], 0 ; compare until 0 byte to signify end
-    je .printStdout
+    jle zeroFound
+
     inc rdx
+    jmp strlen_loop
 
-    cmp rdx, 257
-    jge maxLengthReached
-    jmp.strlen_loop
+    zeroFound:
+    call printChar
 
-    cmp [newLineBool], 0
-    jle finishloop
+    cmp [abs skipNewLine], 1
+    je finishloop
 
     ; write \n to stdout
-    mov rsi, 10
+    mov [abs newLine], 10
+    lea rsi, [abs newLine]
     mov rdx, 1
     call printChar
 

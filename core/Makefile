@@ -2,7 +2,7 @@ ASM = nasm
 AFLAGS = -f elf64
 LD = ld
 
-OBJ = main.o debug/io.o
+OBJ = main.o debug/io.o memory/const.o
 
 all: main
 
