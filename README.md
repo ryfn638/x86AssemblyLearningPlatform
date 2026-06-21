@@ -1,15 +1,39 @@
-# Assemblearn
+# AssemblyLearn
 ## Overview
-Currently a pure x86 Assembly project that im doing for fun as a warmup to building an OS
-This is pretty bare bones and is generally for practice so dont expect perfect assembly usage here.
+A pure x86-64 NASM assembly project for learning low-level programming, built as a warmup toward OS development.
+This is practice-oriented — don't expect perfect assembly usage.
 
-## Important Registers
-```nasm
-rbp ; rbp is the amount of storage in each memory arena (in bytes)
+## Structure
+```
+core/
+  main.asm          - entry point
+  debug/
+    io.asm          - string printing (printStr)
+    ionum.asm       - integer printing (printInt)
+  memory/
+    arena.asm       - memory arena management
+    allocate.asm    - allocation helpers
+    write.asm       - memory write utilities
+    const.asm       - constants
+  helpers/
+    mathMul.asm     - matrix/math multiplication
+    backprop.asm    - neural network back propagation
 ```
 
-```nasm
-r12 ; r12 is the pointer to the memory arena
+## Building
+```bash
+cd core
+make        # build
+make clean  # remove objects and binary
 ```
 
-This will be updated with time and more serves as documentation for myself, then for other people in all honesty
+## Debug Utilities
+```nasm
+; print a null-terminated string
+lea rsi, myString
+call printStr
+
+; print an integer
+mov rsi, 42
+call printInt
+```
