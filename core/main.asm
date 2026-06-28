@@ -3,7 +3,7 @@ extern printInt
 extern newLineBool
 
 section .data
-  msg db "Ligma Balls", 0
+  msg db "Initialising Network", 0
 
 section .text
 global _start

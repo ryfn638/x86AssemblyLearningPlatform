@@ -13,7 +13,7 @@ global forwardPass
 
 ; ========================
 ; forwardPass()
-; Runs a full forward pass through the network and updates the arena
+; Runs a forward pass for the network
 ; =======================
 forwardPass:
     mov rcx, 1
@@ -59,22 +59,22 @@ initNeurons:
 ; all inputs from the previous layer into the stack slot.
 ; ====================================
 neuronAccumulation:
-    mov r8, 0
-    neuronIndex equ r8
+  mov r8, 0
+  neuronIndex equ r8
 
-    mov r9, 0
-    weightIndex equ r9
+  mov r9, 0
+  weightIndex equ r9
 
-    forwardNeuronLoop:
-        mov edx, [networkOffset + neuronIndex*4]    ; byte offset for this neuron's weights
+  forwardNeuronLoop:
+    mov edx, [networkOffset + neuronIndex*4]    ; byte offset for this neuron's weights
 
-        mov weightIndex, 0
-        call forwardWeightLoop
+    mov weightIndex, 0
+    call forwardWeightLoop
 
-        inc neuronIndex
-        cmp neuronIndex, [networkShape + layerIndex * 4]
-        jl forwardNeuronLoop
-    ret
+    inc neuronIndex
+    cmp neuronIndex, [networkShape + layerIndex * 4]
+    jl forwardNeuronLoop
+  ret
 
 ; =========================
 ; forwardWeightLoop()

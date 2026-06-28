@@ -1,6 +1,8 @@
 ; ======================
 ; Memory Writing Programs
 ; ======================
+extern printStr
+extern printInt
 
 section .data
     batchSize   dq 32
@@ -17,10 +19,113 @@ section .bss
     nodeSize   resq 1
     weightSize resq 1
 
+; For finding a weight at neuron i and layer j it is essentially
+; networkWeights + [weightLayerOffset * j] + neuronCount * i
 section .bss
-    networkShape  resq 1
-    networkOffset resq 1
-    networkLayers resq 1
+    networkNeurons resq 1 ; all of the neurons in the network
+    neuronLayerOffset resq 1 ; Start offset for neurons in a singualr layer
+
+    networkWeights resq 1 ; array of the networkWeights
+    weightLayerOffset resq 1 ; start offset for weights in a singular layer
+
+    networkBias resq 1 ; 
+    biasLayerOffset resq 1 ; Bias per layer
+
+    networkShapePtr resq 1 ; The amount of neurons per layer at j is [networkShapePtr + 4*j];
+    totalLayers resb 4
+;
+
+reallocateWeights:
+
+; mov into rdi the element being reallocated with a new size
+; mov into rsi the length of the new mapped area
+; rax is the output address of the new allocation
+; shouldnt require deallocation for now, since we're moreos just appending
+reallocateElement:
+  syscall
+  ret
+
+; When this is called, rax is essentially the amount of neurons in the new layer
+reallocateArena:
+  mov rsi, [networkShapePtr + rcx] ; move into rsi the amount of neurons in this layer
+  rsi equ currentNeuronCount
+  cmp rcx, 1
+  jl skipWeights ; weights 
+
+  ; weight allocation is slightly different
+  mov rdi, [networkWeights] ; rdi is the start address, s
+  imul rsi, [networkShapePtr + rcx - 1] ; prevNeuronCount * currentNeuronCount
+  imul rsi, 4
+  call reallocateElement
+  mov [weightLayerOffset + rcx - 1], rsi
+  mov [networkWeights], rax ; the address should be the same, but it may change
+  
+  skipWeights:
+  mov rdi, [networkNeurons] ; rdi is the start address, s
+  imul currentNeuronCount, 4
+  call reallocateElement
+  mov [networkNeurons], rax ; the address should be the same, but it may change
+
+  mov rdi, [networkBias] ; rdi is the start address, s
+  imul currentNeuronCount, 4
+  call reallocateElement
+  mov [networkBias], rax ; the address should be the same, but it may change
+  
+  ret
+;
+
+; rax is the number of neuron in the layer
+; rcx is the layer
+; rsi is the total running count of nodes
+createLayer:
+    inc rcx
+    call InitAllPointers
+
+    mov [networkShapePtr + rcx], rax
+    imul rax, 4
+
+    mov [neuronLayerOffset + rcx], rax 
+    mov [biasLayerOffset + rbx], rax
+    
+    call ReallocateArena
+    ret
+
+; initPointer, allocates a heap for a pointer
+initPointer:
+  mov rdi, 0
+  mov rsi, rcx; rcx is the tally of layers
+  mov rdx, 3,
+  mov r10, 34
+  syscall
+
+  ret
+; 
+;
+; Initialises all of the initial pointers
+InitAllPointers:
+  call initPointer
+  mov networkNeurons, rax ; all of the neurons in the network
+
+  call initPointer
+  mov neuronLayerOffset, rax ; Start offset for neurons in a singualr layer
+
+  call initPointer
+  mov networkWeights, rax ; array of the networkWeights
+
+  call initPointer
+  mov weightLayerOffset, rax ; start offset for weights in a singular layer
+  
+  call initPointer
+  mov networkBias , rax; 
+
+  call initPointer
+  mov biasLayerOffset, rax ; Bias per layer
+
+  call initPointer
+  mov networkShapePtr, rax ; The amo
+
+  ret
+
 
 ; =======================
 ; networkInit()
@@ -35,81 +140,35 @@ section .bss
 ;
 ; rax: total byte count needed for nodes
 ; =======================
+global networkInit
 networkInit:
     mov rbx, 0
     mov rcx, 0
 
+    ; Allocate an initial heap and then reallocate more with each new layer
+    ; Previous approach is technically more efficient, but god this is so much easier to work with
+    call InitAllPointers
+
     ; Input Layer - 3600 bytes
     mov rax, 900
-    push rax
-    imul rax, 4
-    mov rsi, rax
-    inc rcx
+    call createLayer
 
     ; Hidden Layer 1 - 512 bytes
     mov rax, 128
-    push rax
-    imul rax, 4
-    add rsi, rax
-    inc rcx
+    call createLayer
 
     ; Hidden Layer 2 - 256 bytes
     mov rax, 64
-    push rax
-    imul rax, 4
-    add rsi, rax
-    inc rcx
+    call createLayer
 
     ; Output Layer - 40 bytes
     mov rax, 10
-    push rax
-    imul rax, 4
-    add rsi, rax
-    inc rcx
+    call createLayer
 
-    ; Allocate node storage
-    mov rdx, 3
-    mov r10, 34
-    call allocateHeap
-
-    mov r12, rax
-    mov [nodeSize], r12
-    mov [networkLayers], rcx
-
-    ; Allocate networkShape array (one dword per layer)
-    mov rsi, rcx
-    imul rsi, 4
-    call allocateHeap
-    mov [networkShape], rax
-
-    ; Allocate networkOffset array (separate allocation, same size)
-    mov rsi, rcx
-    imul rsi, 4
-    call allocateHeap
-    mov [networkOffset], rax
-
-    ; Populate networkShape and networkOffset by popping layer sizes off the stack.
-    ; rcx holds the layer count; convert to a byte offset for the last element.
-    imul rcx, 4     ; rcx = byte offset of last entry
-
-    mov rbx, 0      ; rbx tracks the previous layer size for weight-count products
-    assignLoop:
-        pop rsi                         ; layer size (popped in reverse: 10, 64, 128, 900)
-        mov [networkShape + rcx], rsi
-
-        mov rbp, rbx                    ; rbp = previous layer size
-        mov rbx, rsi                    ; rbx = current layer size
-        mov r12, rbp
-        imul r12, rbx                   ; r12 = prev * curr connection count
-
-        add r13, r12                    ; accumulate total weight count
-        mov [networkOffset + rcx], r13
-
-        sub rcx, 4
-        jnz assignLoop
-
-    mov [weightSize], r13
+    imul rcx, 4 ; just so things wrap up a little clearner
+    mov [totalLayers], rcx
     ret
+
 
 ; ============================================
 ; generateRandomNums()
@@ -136,31 +195,27 @@ generateRandomNums:
 ; ============================================
 writeDefaultWeights:
     mov rcx, 0
-    layerIndex equ rcx
+    layerOffset equ rcx
 
     mov rdx, 0
-    neuronIndex equ rdx
+    neuronOffset equ rdx
 
     mov r8, 0
-    weightIndex equ r8
+    weightOffset equ r8
 
     writeLayerLoop:
-        mov eax, ecx
-        inc eax
-        imul eax, 4
-        mov ebx, [networkShape + eax]   ; neuron count of the next layer
-
-        mov neuronIndex, 0
+      mov neuronOffset, 0
         writeNeuronLoop:
-            mov weightIndex, 0
-            call writeWeightLoop
+            mov weightOffset, 0
+            cmp layerOffset, 1
+            jge writeWeightLoop
 
-            inc neuronIndex
-            cmp neuronIndex, [networkShape + layerIndex * 4]
+            add neuronOffset, 4
+            cmp neuronOffset, [neuronLayerOffset + layerOffset]
             jl writeNeuronLoop
 
-        inc layerIndex
-        cmp layerIndex, [networkLayers]
+        add layerOffset, 4
+        cmp layerOffset, [totalLayers]
         jl writeLayerLoop
     ret
 
@@ -172,11 +227,13 @@ writeDefaultWeights:
 writeWeightLoop:
     call generateRandomNums             ; xmm0 = random weight
 
-    mov r9, [networkOffset + layerIndex * 4]
-    movss [networkPtr + r9 + weightIndex*4 + 8], xmm0
-    mov dword [networkPtr + r9 + 4], 0  ; zero bias
+    mov r9, [networkShapePtr + layerOffset - 4] ; Get the number of neurons in the previous layer
+    imul r9, neuronOffset ; multiply the number of neurons 
+    shr r9, 2 ; shift right twice, basically divide by 4
+    add r9, [weightLayerOffset + layerOffset] ; add on the offset to the layer
+    movss [networkWeights + r9], xmm0
 
-    inc weightIndex
-    cmp weightIndex, ebx
+    inc weightOffset
+    cmp weightOffset, ebx
     jl writeWeightLoop
     ret

@@ -63,7 +63,7 @@ calculateAllGradients:
 ; neuronIndex (rdx), weightIndex (r11)
 ; ==================================
 assignWeightLoop:
-    call sumPrevious                                    ; xmm2 = accumulated gradient
+    call calculateLayerGradient ; xmm2 is the output
     movss [networkPtr + neuronIndex*8 + rcx], xmm2
 
     dec weightIndex
@@ -164,20 +164,19 @@ findTraining:
 ; rdx: neuron index
 ;=================================
 seedOutputGradient:
-    mov rdx, 0;
-    rdx equ trainingNeuronIdx
-    mov rax, [networkLayers] - 1
-    rax equ trainingDataLayer
-    mov r9, [networkOffset + trainingDataLayer*4]
-    call outputNeuronLoop
+  mov rdx, 0;
+  rdx equ trainingNeuronIdx
+  mov rax, [networkLayers] - 1
+  rax equ trainingDataLayer
+  mov r9, [networkOffset + trainingDataLayer*4]
+  call outputNeuronLoop
 
-    outputNeuronLoop:
-        call cost_derivative ; xmm0
-	movss xmm0, xmm0
-	call stashResult
-	inc trainingNeuornIdx
-	cmp trainingNeuronIdx, [networkShape + trainingDataLayer * 4]  
-	jl outputNeuronLoop
+  outputNeuronLoop:
+    call costDerivative
+    call stashResult
+    inc trainingNeuornIdx
+    cmp trainingNeuronIdx, [networkShape + trainingDataLayer * 4]  
+    jl outputNeuronLoop
 
     ret
 
